@@ -1,0 +1,87 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment variables and secrets
+.env
+.env.*
+*.pem
+.aws/
+.config/
+
+# Generated media files
+**/audio/
+**/videos/
+**/images/
+*.mp3
+*.mp4
+*.wav
+*.ogg
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.webm
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+coverage/
+.nyc_output/
+.jest/
+
+# Build outputs
+dist/
+build/
+out/
+
+# IDE/Editor specific
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.sublime-workspace
+*.sublime-project
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+.directory
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.temp/
+
+# Debug files
+.debug/
+debug/
+.debug.log
+
+# Optional: Project specific (uncomment if needed)
+# docs/_site/
+# .docusaurus/
+# .next/
+# .nuxt/
+# .output/
