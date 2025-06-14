@@ -1,6 +1,7 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const OpenAI = require('openai');
 
 const app = express();
@@ -23,6 +24,15 @@ const SCRIPT_TEMPLATES = {
   'newscast': 'Create a newscast-style script that presents this trending topic in a professional journalistic manner.'
 };
 
+// Script length configurations
+const SCRIPT_LENGTHS = {
+  'short': { duration: '15-30 seconds', words: '40-80 words' },
+  'medium': { duration: '45-60 seconds', words: '120-160 words' },
+  'long': { duration: '3-5 minutes', words: '450-750 words' },
+  'extended': { duration: '10-15 minutes', words: '1500-2250 words' },
+  'custom': { duration: 'custom', words: 'as specified' }
+};
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', service: 'script-generator' });
@@ -35,10 +45,17 @@ app.get('/styles', (req, res) => {
   });
 });
 
+// Get available script lengths
+app.get('/lengths', (req, res) => {
+  res.json({
+    lengths: SCRIPT_LENGTHS
+  });
+});
+
 // Generate script from trend data
 app.post('/generate', async (req, res) => {
   try {
-    const { trendData, style = 'podcast' } = req.body;
+    const { trendData, style = 'podcast', length = 'medium', customDuration } = req.body;
     
     if (!trendData || !trendData.trends || trendData.trends.length === 0) {
       return res.status(400).json({ error: 'No trend data provided' });
@@ -48,7 +65,7 @@ app.post('/generate', async (req, res) => {
     const topTrend = trendData.trends[0];
     
     // Generate script using OpenAI
-    const script = await generateScript(topTrend, style);
+    const script = await generateScript(topTrend, style, length, customDuration);
     
     // Generate title and description
     const metadata = await generateMetadata(topTrend, script);
@@ -72,8 +89,19 @@ app.post('/generate', async (req, res) => {
 });
 
 // Function to generate script using OpenAI
-async function generateScript(trendData, style) {
+async function generateScript(trendData, style, length = 'medium', customDuration) {
   const template = SCRIPT_TEMPLATES[style] || SCRIPT_TEMPLATES.podcast;
+  const lengthConfig = SCRIPT_LENGTHS[length] || SCRIPT_LENGTHS.medium;
+  
+  let durationText = lengthConfig.duration;
+  let wordCount = lengthConfig.words;
+  
+  if (length === 'custom' && customDuration) {
+    durationText = customDuration;
+    const minutes = parseInt(customDuration.match(/\d+/)?.[0] || '1');
+    const estimatedWords = minutes * 150; // ~150 words per minute
+    wordCount = `approximately ${estimatedWords} words`;
+  }
   
   const prompt = `
 ${template}
@@ -85,7 +113,7 @@ Content: ${trendData.content || '(No additional content)'}
 Comments: ${trendData.numComments}
 Upvotes: ${trendData.score}
 
-Create a script suitable for a 30-60 second YouTube Short video. The script should be engaging, concise, and formatted clearly with speaker parts if applicable.
+Create a script for a ${durationText} video (${wordCount}). The script should be engaging, well-paced, and formatted clearly with speaker parts if applicable.
 `;
 
   const response = await openai.chat.completions.create({

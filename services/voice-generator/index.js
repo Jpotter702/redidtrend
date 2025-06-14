@@ -31,6 +31,15 @@ const DEFAULT_VOICES = {
   narrator: 'Stephen' // Neutral narrator
 };
 
+// Voice generation settings for different lengths
+const VOICE_SETTINGS = {
+  'short': { maxSegments: 3, pauseBetween: 0.3 },
+  'medium': { maxSegments: 5, pauseBetween: 0.5 },
+  'long': { maxSegments: 10, pauseBetween: 0.7 },
+  'extended': { maxSegments: 20, pauseBetween: 1.0 },
+  'custom': { maxSegments: null, pauseBetween: 0.5 }
+};
+
 app.use(cors());
 app.use(express.json());
 
@@ -71,16 +80,26 @@ app.get('/voices', async (req, res) => {
   }
 });
 
+// Get voice settings for different lengths
+app.get('/settings', (req, res) => {
+  res.json({
+    settings: VOICE_SETTINGS,
+    defaultVoices: DEFAULT_VOICES
+  });
+});
+
 // Generate voice-over for single voice
 app.post('/generate', async (req, res) => {
   try {
-    const { script, voiceId } = req.body;
+    const { script, voiceId, length = 'medium', customSegments } = req.body;
     
     if (!script) {
       return res.status(400).json({ error: 'No script provided' });
     }
     
-    const audioResult = await generatePollyAudio(script, voiceId);
+    // Apply length settings if script needs segmentation
+    const settings = VOICE_SETTINGS[length] || VOICE_SETTINGS.medium;
+    const audioResult = await generatePollyAudio(script, voiceId, settings);
     
     res.json({
       audioFile: audioResult.audioPath,
@@ -96,7 +115,7 @@ app.post('/generate', async (req, res) => {
 // Generate voice-over for podcast format (multiple voices)
 app.post('/generate/podcast', async (req, res) => {
   try {
-    const { segments, voices = {} } = req.body;
+    const { segments, voices = {}, length = 'medium', customSettings } = req.body;
     
     if (!segments || !Array.isArray(segments)) {
       return res.status(400).json({ error: 'No segments provided or invalid format' });
@@ -108,12 +127,18 @@ app.post('/generate/podcast', async (req, res) => {
       ...voices
     };
     
+    // Apply length settings
+    const settings = length === 'custom' && customSettings ? customSettings : (VOICE_SETTINGS[length] || VOICE_SETTINGS.medium);
+    
+    // Limit segments based on length setting
+    const limitedSegments = settings.maxSegments ? segments.slice(0, settings.maxSegments) : segments;
+    
     // Generate audio for each segment
-    const results = await Promise.all(segments.map(async (segment) => {
+    const results = await Promise.all(limitedSegments.map(async (segment) => {
       const { role, text } = segment;
       const voiceId = selectedVoices[role] || DEFAULT_VOICES.narrator;
       
-      return generatePollyAudio(text, voiceId);
+      return generatePollyAudio(text, voiceId, settings);
     }));
     
     // Calculate total duration
@@ -121,12 +146,18 @@ app.post('/generate/podcast', async (req, res) => {
     
     res.json({
       segments: results.map((result, index) => ({
-        role: segments[index].role,
+        role: limitedSegments[index].role,
         audioFile: result.audioPath,
         duration: result.duration,
-        voiceId: result.voiceId
+        voiceId: result.voiceId,
+        pauseAfter: settings.pauseBetween
       })),
-      totalDuration
+      totalDuration,
+      settings: {
+        length,
+        maxSegments: settings.maxSegments,
+        pauseBetween: settings.pauseBetween
+      }
     });
   } catch (error) {
     console.error('Error generating podcast voice-over:', error.message);
@@ -152,13 +183,20 @@ async function getPollyVoices() {
   }
 }
 
-async function generatePollyAudio(script, voiceId) {
+async function generatePollyAudio(script, voiceId, settings = {}) {
   try {
     const defaultVoiceId = 'Matthew'; // Default to Matthew (neural voice)
     const voice = voiceId || defaultVoiceId;
     
+    // Add SSML pauses if settings specify it
+    let processedScript = script;
+    if (settings.pauseBetween && settings.pauseBetween > 0) {
+      processedScript = `<speak>${script}<break time="${settings.pauseBetween}s"/></speak>`;
+    }
+    
     const params = {
-      Text: script,
+      Text: processedScript,
+      TextType: settings.pauseBetween ? 'ssml' : 'text',
       OutputFormat: 'mp3',
       VoiceId: voice,
       Engine: 'neural' // Use neural engine for better quality

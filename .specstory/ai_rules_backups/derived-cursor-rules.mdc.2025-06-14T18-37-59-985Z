@@ -1,0 +1,61 @@
+
+## HEADERS
+
+This document outlines the rules and guidelines for the AI coding assistant within this project. It covers project standards, tech stack, workflow, and best practices. This document is a living document and will evolve as the project progresses.
+
+## TECH STACK
+
+*   **Programming Languages:** JavaScript, [Add other languages as needed]
+*   **Frameworks/Libraries:** [List frameworks and libraries. e.g., React, Node.js, Express]
+*   **Databases:** [List databases used. e.g., PostgreSQL, MongoDB]
+*   **Cloud Platform:** [Specify cloud platform. e.g., AWS, Azure, GCP]
+*   **Other Tools:** npm
+
+## PROJECT DOCUMENTATION & CONTEXT SYSTEM
+
+*   All code must be well-commented, explaining the purpose and functionality of each section.
+*   README files should be comprehensive and up-to-date, explaining how to run and test each service.
+*   API documentation should be maintained using [Specify documentation tool. e.g., Swagger/OpenAPI].
+*   Directory structure and file naming conventions should be consistent across all services.
+
+## CODING STANDARDS
+
+*   Use consistent indentation and formatting.
+*   Follow established naming conventions for variables, functions, and classes.
+*   Implement proper error handling and logging.
+*   Write modular and reusable code.
+*   Adhere to SOLID principles where applicable.
+
+## WORKFLOW & RELEASE RULES
+
+*   Use Git for version control.
+*   Create branches for new features or bug fixes.
+*   Submit pull requests for code review.
+*   All code must be reviewed and approved before merging into the main branch.
+*   Follow a defined release process.
+
+## DEBUGGING
+
+*   Use debugging tools to identify and fix errors.
+*   Write unit tests to ensure code functionality.
+*   Implement logging to track application behavior.
+*   When encountering "EADDRINUSE" errors (address already in use), identify the process occupying the port using `lsof -i :<port>` and terminate it using `kill -9 <PID>`. Replace `<port>` with the port number (e.g., 3001) and `<PID>` with the process ID. Alternatively, use `pkill -f "<process_name>"` to kill the process by name (e.g. `pkill -f "node index.js"`). If the error persists, double-check to ensure no other applications are running on the same port.
+
+## TESTING
+
+*   Services should be tested individually before integration.
+*   Use `curl` commands to test basic service functionality.
+*   Progress from simple to complex `curl` requests to ensure full functionality.
+*   When testing microservices, start by testing the health check endpoint (e.g., `/health`) to ensure the service is responding.
+*   The core microservices are:
+    *   reddit-trends
+    *   script-generator
+    *   voice-generator
+    *   video-creator
+    *   youtube-uploader
+*   Testing approach:
+    *   Start each service individually
+    *   Fix any startup errors
+    *   Test with simple `curl` commands
+    *   Progress to more complex tests
+    *   Move to the next service once fully working

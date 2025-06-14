@@ -4,7 +4,7 @@ const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.REDDIT_SERVICE_PORT || 3001;
+const PORT = process.env.REDDIT_SERVICE_PORT || 3002;
 
 app.use(cors());
 app.use(express.json());
