@@ -1,0 +1,21 @@
+{
+  "name": "reddit-trend-deployment",
+  "version": "1.0.0",
+  "description": "AWS deployment scripts for Reddit Trend application",
+  "main": "deploy.js",
+  "scripts": {
+    "deploy": "node deploy.js",
+    "deploy:lambda": "node deploy.js lambda",
+    "deploy:bedrock": "node deploy.js bedrock", 
+    "deploy:ec2": "node deploy.js ec2",
+    "list": "node deploy.js list"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1490.0",
+    "archiver": "^6.0.1",
+    "serverless-http": "^3.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
