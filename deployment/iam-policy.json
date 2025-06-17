@@ -4,17 +4,15 @@
         {
             "Effect": "Allow",
             "Action": [
-                "s3:PutObject",
-                "s3:GetObject",
-                "s3:ListBucket",
-                "s3:DeleteObject"
+                "lambda:*",
+                "apigateway:*",
+                "s3:*",
+                "dynamodb:*",
+                "bedrock:*",
+                "iam:PassRole",
+                "logs:*"
             ],
-            "Resource": [
-                "arn:aws:s3:::redidtrend-videos/*",
-                "arn:aws:s3:::redidtrend-videos",
-                "arn:aws:s3:::redidtrend-temp/*",
-                "arn:aws:s3:::redidtrend-temp"
-            ]
+            "Resource": "*"
         },
         {
             "Effect": "Allow",

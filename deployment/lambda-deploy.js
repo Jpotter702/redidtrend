@@ -88,8 +88,7 @@ class LambdaDeployment {
       MemorySize: 1024,
       Environment: {
         Variables: {
-          NODE_ENV: 'production',
-          AWS_REGION: process.env.AWS_REGION || 'us-east-1'
+          NODE_ENV: 'production'
         }
       }
     };
@@ -172,9 +171,55 @@ module.exports.handler = serverless(app);
   }
 
   async createApiResource(apiId, serviceName) {
-    // Implementation for creating API Gateway resources
-    // This would create the routing for each service
-    console.log(`Creating API resource for ${serviceName}`);
+    // Get the root resource ID
+    const resources = await apigateway.getResources({ restApiId: apiId }).promise();
+    const rootResourceId = resources.items.find(r => r.path === '/').id;
+
+    // Create a resource for the service
+    const resource = await apigateway.createResource({
+      restApiId: apiId,
+      parentId: rootResourceId,
+      pathPart: serviceName
+    }).promise();
+
+    // Add POST method
+    await apigateway.putMethod({
+      restApiId: apiId,
+      resourceId: resource.id,
+      httpMethod: 'POST',
+      authorizationType: 'NONE'
+    }).promise();
+
+    // Lambda integration - map to correct function name for Bedrock services
+    let functionName;
+    if (serviceName === 'script-generator') {
+      functionName = 'reddit-trend-script-generator-bedrock';
+    } else if (serviceName === 'voice-generator') {
+      functionName = 'reddit-trend-voice-generator-bedrock';
+    } else {
+      functionName = `reddit-trend-${serviceName}`;
+    }
+    const accountId = await this.getAccountId();
+    await apigateway.putIntegration({
+      restApiId: apiId,
+      resourceId: resource.id,
+      httpMethod: 'POST',
+      type: 'AWS_PROXY',
+      integrationHttpMethod: 'POST',
+      uri: `arn:aws:apigateway:${process.env.AWS_REGION}:lambda:path/2015-03-31/functions/arn:aws:lambda:${process.env.AWS_REGION}:${accountId}:function:${functionName}/invocations`
+    }).promise();
+
+    // Grant API Gateway permission to invoke the Lambda function
+    const lambdaArn = `arn:aws:lambda:${process.env.AWS_REGION}:${accountId}:function:${functionName}`;
+    await lambda.addPermission({
+      FunctionName: functionName,
+      StatementId: `${serviceName}-apigateway-invoke-${apiId}`,
+      Action: 'lambda:InvokeFunction',
+      Principal: 'apigateway.amazonaws.com',
+      SourceArn: `arn:aws:execute-api:${process.env.AWS_REGION}:${accountId}:${apiId}/*/POST/${serviceName}`
+    }).promise();
+
+    console.log(`Created API resource and POST method for ${serviceName}`);
   }
 
   async getAccountId() {

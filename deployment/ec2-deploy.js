@@ -72,7 +72,7 @@ class EC2Deployment {
         ]
       }).promise();
 
-      console.log(\`Created security group: \${this.securityGroupId}\`);
+      console.log('Created security group: ' + this.securityGroupId);
     } catch (error) {
       if (error.code === 'InvalidGroup.Duplicate') {
         console.log('Security group already exists');
@@ -107,11 +107,11 @@ class EC2Deployment {
     const result = await ec2.runInstances(params).promise();
     this.instanceId = result.Instances[0].InstanceId;
     
-    console.log(\`Launched EC2 instance: \${this.instanceId}\`);
+    console.log(`Launched EC2 instance: ${this.instanceId}`);
   }
 
   generateUserData() {
-    return \`#!/bin/bash
+    return `#!/bin/bash
 yum update -y
 yum install -y docker git
 
@@ -327,8 +327,7 @@ cat > /etc/logrotate.d/reddit-trend << 'EOF'
 }
 EOF
 
-echo "Reddit Trend application deployed successfully!"
-\`;
+echo "Reddit Trend application deployed successfully!"`;
   }
 
   async waitForInstance() {
@@ -343,7 +342,7 @@ echo "Reddit Trend application deployed successfully!"
     const result = await ec2.describeInstances(params).promise();
     const instance = result.Reservations[0].Instances[0];
     
-    console.log(\`Instance is running at: \${instance.PublicDnsName}\`);
+    console.log(`Instance is running at: ${instance.PublicDnsName}`);
     return instance.PublicDnsName;
   }
 

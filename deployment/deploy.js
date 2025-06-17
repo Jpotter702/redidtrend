@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+
 // Main deployment script with option selection
 const { deploymentOptions } = require('./config');
 const LambdaDeployment = require('./lambda-deploy');

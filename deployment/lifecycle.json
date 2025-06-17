@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "DeleteOldTempFiles",
+      "Status": "Enabled",
+      "Filter": {},
+      "Expiration": {
+        "Days": 1
+      }
+    }
+  ]
+} 

@@ -9,14 +9,15 @@ AMI_ID="ami-0c7217cdde317cfec"  # Ubuntu 22.04 LTS
 KEY_NAME="redidtrend-key"
 SECURITY_GROUP_NAME="redidtrend-sg"
 VOLUME_SIZE=100  # GB
+KEY_DIR="aws/keys"
 
 # Create key pair
 echo "Creating key pair..."
 aws ec2 create-key-pair \
     --key-name $KEY_NAME \
     --query 'KeyMaterial' \
-    --output text > $KEY_NAME.pem
-chmod 400 $KEY_NAME.pem
+    --output text > "$KEY_DIR/$KEY_NAME.pem"
+chmod 400 "$KEY_DIR/$KEY_NAME.pem"
 
 # Create security group
 echo "Creating security group..."
@@ -70,7 +71,7 @@ PUBLIC_IP=$(aws ec2 describe-instances \
 echo "Instance launched successfully!"
 echo "Instance ID: $INSTANCE_ID"
 echo "Public IP: $PUBLIC_IP"
-echo "SSH command: ssh -i $KEY_NAME.pem ubuntu@$PUBLIC_IP"
+echo "SSH command: ssh -i $KEY_DIR/$KEY_NAME.pem ubuntu@$PUBLIC_IP"
 
 # Save instance information
 echo "Saving instance information..."
