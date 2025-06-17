@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  video-generator:
+    build:
+      context: ./services/video-generator
+      dockerfile: Dockerfile
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL}
+      - SCRIPT_SERVICE_URL=${SCRIPT_SERVICE_URL}
+    volumes:
+      - ./services/video-generator:/app
+      - /tmp:/tmp
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  voice-generator:
+    build:
+      context: ./services/voice-generator
+      dockerfile: Dockerfile
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+    ports:
+      - "8001:8000"
+
+  script-generator:
+    build:
+      context: ./services/script-generator
+      dockerfile: Dockerfile
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+    ports:
+      - "8002:8000"
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    environment:
+      - VIDEO_SERVICE_URL=http://video-generator:8000
+      - VOICE_SERVICE_URL=http://voice-generator:8000
+      - SCRIPT_SERVICE_URL=http://script-generator:8000
+    ports:
+      - "80:80"
+    depends_on:
+      - video-generator
+      - voice-generator
+      - script-generator 
