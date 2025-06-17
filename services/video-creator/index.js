@@ -8,6 +8,8 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const AWS = require('aws-sdk');
+const { promisify } = require('util');
 
 const app = express();
 const PORT = process.env.VIDEO_SERVICE_PORT || 3004;
@@ -48,6 +50,53 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Initialize AWS clients
+const s3 = new AWS.S3();
+const mediaconvert = new AWS.MediaConvert({
+  endpoint: process.env.MEDIACONVERT_ENDPOINT
+});
+
+// Constants for S3
+const S3_BUCKET = process.env.S3_BUCKET;
+const S3_PREFIX = 'video-creator';
+
+// Helper function to upload file to S3
+async function uploadToS3(filePath, key) {
+  const fileStream = fs.createReadStream(filePath);
+  const uploadParams = {
+    Bucket: S3_BUCKET,
+    Key: `${S3_PREFIX}/${key}`,
+    Body: fileStream
+  };
+  
+  await s3.upload(uploadParams).promise();
+  return `s3://${S3_BUCKET}/${S3_PREFIX}/${key}`;
+}
+
+// Helper function to download from S3
+async function downloadFromS3(s3Uri, localPath) {
+  const key = s3Uri.replace(`s3://${S3_BUCKET}/`, '');
+  const downloadParams = {
+    Bucket: S3_BUCKET,
+    Key: key
+  };
+  
+  const { Body } = await s3.getObject(downloadParams).promise();
+  fs.writeFileSync(localPath, Body);
+  return localPath;
+}
+
+// Helper function to clean up temporary files
+async function cleanupFiles(files) {
+  for (const file of files) {
+    try {
+      await fs.promises.unlink(file);
+    } catch (error) {
+      console.warn(`Failed to delete temporary file ${file}:`, error);
+    }
+  }
+}
+
 // Video style templates
 const VIDEO_STYLES = {
   'podcast': {
@@ -72,6 +121,47 @@ const VIDEO_STYLES = {
   }
 };
 
+// Video configuration constants
+const VIDEO_CONFIGS = {
+  'short': {
+    maxDuration: 60,
+    dimensions: { width: 1080, height: 1920 },
+    format: 'shorts'
+  },
+  'standard': {
+    maxDuration: 600,
+    dimensions: { width: 1920, height: 1080 },
+    format: 'landscape'
+  },
+  'long': {
+    maxDuration: 900,
+    dimensions: { width: 1920, height: 1080 },
+    format: 'landscape'
+  }
+};
+
+// Theme and genre configurations
+const THEME_CONFIGS = {
+  'educational': {
+    transitionStyle: 'fade',
+    backgroundStyle: 'gradient',
+    textStyle: 'clean',
+    colorScheme: ['#2C3E50', '#3498DB', '#ECF0F1']
+  },
+  'entertainment': {
+    transitionStyle: 'dynamic',
+    backgroundStyle: 'vibrant',
+    textStyle: 'bold',
+    colorScheme: ['#E74C3C', '#F1C40F', '#2ECC71']
+  },
+  'news': {
+    transitionStyle: 'slide',
+    backgroundStyle: 'professional',
+    textStyle: 'serif',
+    colorScheme: ['#34495E', '#7F8C8D', '#BDC3C7']
+  }
+};
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', service: 'video-creator' });
@@ -88,50 +178,52 @@ app.get('/styles', (req, res) => {
   res.json({ styles });
 });
 
-// Create video endpoint
+// Modified create video endpoint to handle orchestration inputs
 app.post('/create', upload.fields([
   { name: 'audioFile', maxCount: 1 },
-  { name: 'images', maxCount: 10 }
+  { name: 'images', maxCount: 20 }
 ]), async (req, res) => {
   try {
-    let audioFile;
-    
-    if (req.files && req.files.audioFile) {
-      audioFile = req.files.audioFile[0].path;
-    } else if (req.body.audioFile) {
-      // Copy the file from the other service
-      const sourcePath = req.body.audioFile;
-      
-      if (fs.existsSync(sourcePath)) {
-        const filename = path.basename(sourcePath);
-        const destPath = path.join(AUDIO_DIR, filename);
-        
-        fs.copyFileSync(sourcePath, destPath);
-        audioFile = destPath;
-      } else {
-        return res.status(400).json({ error: 'Audio file not found' });
-      }
-    } else {
+    const {
+      audioFile,
+      script,
+      style = 'slideshow',
+      duration = 'short',
+      theme = 'educational',
+      genre,
+      customSettings
+    } = req.body;
+
+    // Validate inputs
+    if (!audioFile) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
-    
-    const { script, style = 'slideshow' } = req.body;
-    
-    if (!VIDEO_STYLES[style]) {
-      return res.status(400).json({ error: 'Invalid video style' });
+
+    if (!script) {
+      return res.status(400).json({ error: 'No script provided' });
     }
-    
+
+    // Get video configuration
+    const videoConfig = VIDEO_CONFIGS[duration] || VIDEO_CONFIGS.short;
+    const themeConfig = THEME_CONFIGS[theme] || THEME_CONFIGS.educational;
+
     // Generate video based on selected style
     const videoResult = await VIDEO_STYLES[style].handler({
       audioFile,
-      script: typeof script === 'string' ? script : JSON.stringify(script),
-      images: req.files && req.files.images ? req.files.images.map(file => file.path) : []
+      script,
+      duration: videoConfig.maxDuration,
+      dimensions: videoConfig.dimensions,
+      theme: themeConfig,
+      genre,
+      customSettings
     });
-    
+
     res.json({
       videoFile: videoResult.videoPath,
       duration: videoResult.duration,
-      style
+      style,
+      format: videoConfig.format,
+      theme
     });
   } catch (error) {
     console.error('Error creating video:', error.message);
@@ -183,84 +275,215 @@ async function createPodcastVideo({ audioFile, script }) {
   });
 }
 
-// Function to create slideshow video
-async function createSlideshowVideo({ audioFile, script }) {
-  const outputPath = path.join(VIDEOS_DIR, `${uuidv4()}.mp4`);
-  
-  // Parse script to extract key phrases for image generation
-  let scriptObj;
+// Modified slideshow video creation
+async function createSlideshowVideo({ 
+  audioFile, 
+  script, 
+  duration,
+  dimensions,
+  theme,
+  genre,
+  customSettings 
+}) {
+  const tempFiles = [];
   try {
-    scriptObj = typeof script === 'string' ? JSON.parse(script) : script;
-  } catch (e) {
-    scriptObj = { script };
-  }
-  
-  const scriptContent = scriptObj.script || script;
-  
-  // Generate images based on script content
-  const imagePrompts = extractImagePrompts(scriptContent);
-  const imagePaths = [];
-  
-  for (let i = 0; i < imagePrompts.length; i++) {
-    const imagePath = path.join(IMAGES_DIR, `slide-${i}-${uuidv4()}.png`);
-    await generateImage(imagePath, imagePrompts[i]);
-    imagePaths.push(imagePath);
-  }
-  
-  // Get audio duration
-  const audioDuration = await getAudioDuration(audioFile);
-  
-  // Calculate duration for each image
-  const slideDuration = audioDuration / imagePaths.length;
-  
-  return new Promise((resolve, reject) => {
-    let ffmpegCommand = ffmpeg();
-    
-    // Add each image as input
-    imagePaths.forEach((imagePath) => {
-      ffmpegCommand = ffmpegCommand.input(imagePath);
-    });
-    
-    // Add audio input
-    ffmpegCommand = ffmpegCommand.input(audioFile);
-    
-    // Create complex filter for slideshow
-    const filterComplex = imagePaths.map((_, i) => {
-      return `[${i}:v]scale=1080:1920,setpts=PTS-STARTPTS+${i}*${slideDuration}/TB[v${i}]`;
-    }).join(';');
-    
-    const concatFilter = imagePaths.map((_, i) => `[v${i}]`).join('') + 
-      `concat=n=${imagePaths.length}:v=1:a=0[outv]`;
-    
-    ffmpegCommand
-      .complexFilter(filterComplex + ';' + concatFilter)
-      .outputOptions([
-        '-map [outv]',
-        `-map ${imagePaths.length}:a`,
-        '-c:v libx264',
-        '-c:a aac',
-        '-b:a 192k',
-        '-shortest',
-        '-pix_fmt yuv420p'
-      ])
-      .output(outputPath)
-      .on('end', () => {
-        ffmpeg.ffprobe(outputPath, (err, metadata) => {
-          if (err) {
-            return reject(err);
+    const outputPath = path.join(VIDEOS_DIR, `${uuidv4()}.mp4`);
+    tempFiles.push(outputPath);
+
+    // Parse script and extract sections
+    let scriptObj;
+    try {
+      scriptObj = typeof script === 'string' ? JSON.parse(script) : script;
+    } catch (e) {
+      scriptObj = { script };
+    }
+
+    const scriptContent = scriptObj.script || script;
+    const sections = splitScriptIntoSections(scriptContent, duration);
+
+    // Generate or fetch images for each section
+    const imagePrompts = sections.map(section => 
+      generateImagePrompt(section, genre, theme)
+    );
+
+    const imagePaths = [];
+    for (let i = 0; i < imagePrompts.length; i++) {
+      const imagePath = path.join(IMAGES_DIR, `slide-${i}-${uuidv4()}.png`);
+      tempFiles.push(imagePath);
+
+      // Try to get cached image first
+      const cacheKey = `images/${Buffer.from(imagePrompts[i]).toString('base64')}.png`;
+      try {
+        await downloadFromS3(`s3://${S3_BUCKET}/${S3_PREFIX}/${cacheKey}`, imagePath);
+      } catch (error) {
+        // If not in cache, generate new image
+        await generateImage(imagePath, imagePrompts[i], dimensions);
+        // Cache the generated image
+        await uploadToS3(imagePath, cacheKey);
+      }
+
+      imagePaths.push(imagePath);
+    }
+
+    // Get audio duration and calculate section durations
+    const audioDuration = await getAudioDuration(audioFile);
+    const sectionDurations = calculateSectionDurations(sections, audioDuration);
+
+    // Create montage using FFmpeg
+    return new Promise((resolve, reject) => {
+      let ffmpegCommand = ffmpeg();
+
+      // Add each image as input
+      imagePaths.forEach((imagePath) => {
+        ffmpegCommand = ffmpegCommand.input(imagePath);
+      });
+
+      // Add audio input
+      ffmpegCommand = ffmpegCommand.input(audioFile);
+
+      // Create complex filter for montage
+      const filterComplex = createMontageFilter(
+        imagePaths,
+        sectionDurations,
+        theme.transitionStyle,
+        dimensions
+      );
+
+      ffmpegCommand
+        .complexFilter(filterComplex)
+        .outputOptions([
+          '-c:v libx264',
+          '-c:a aac',
+          '-b:a 192k',
+          '-shortest',
+          '-pix_fmt yuv420p',
+          '-movflags +faststart'
+        ])
+        .output(outputPath)
+        .on('end', async () => {
+          try {
+            // Upload the final video to S3
+            const s3Key = `videos/${path.basename(outputPath)}`;
+            await uploadToS3(outputPath, s3Key);
+
+            resolve({
+              videoPath: `s3://${S3_BUCKET}/${S3_PREFIX}/${s3Key}`,
+              duration: audioDuration
+            });
+          } catch (error) {
+            reject(error);
           }
-          
-          resolve({
-            videoPath: outputPath,
-            duration: metadata.format.duration
-          });
-        });
-      })
-      .on('error', (err) => {
-        reject(err);
-      })
-      .run();
-  });
+        })
+        .on('error', (err) => {
+          reject(err);
+        })
+        .run();
+    });
+  } finally {
+    // Clean up temporary files
+    await cleanupFiles(tempFiles);
+  }
+}
+
+// Helper function to split script into sections
+function splitScriptIntoSections(script, maxDuration) {
+  const sentences = script.split(/[.!?]+/).filter(s => s.trim());
+  const sections = [];
+  let currentSection = '';
+  let currentDuration = 0;
+
+  for (const sentence of sentences) {
+    const sentenceDuration = estimateSentenceDuration(sentence);
+    
+    if (currentDuration + sentenceDuration > maxDuration) {
+      if (currentSection) {
+        sections.push(currentSection.trim());
+        currentSection = '';
+        currentDuration = 0;
+      }
+    }
+    
+    currentSection += sentence + '. ';
+    currentDuration += sentenceDuration;
+  }
+
+  if (currentSection) {
+    sections.push(currentSection.trim());
+  }
+
+  return sections;
+}
+
+// Helper function to estimate sentence duration
+function estimateSentenceDuration(sentence) {
+  const words = sentence.split(/\s+/).length;
+  const wordsPerMinute = 150; // Average speaking rate
+  return (words / wordsPerMinute) * 60;
+}
+
+// Helper function to generate image prompt based on content and style
+function generateImagePrompt(section, genre, theme) {
+  const styleModifiers = {
+    'educational': 'educational, informative, clear, professional',
+    'entertainment': 'engaging, dynamic, colorful, eye-catching',
+    'news': 'serious, professional, clear, factual'
+  };
+
+  const genreModifiers = {
+    'technology': 'modern, digital, tech-focused',
+    'science': 'scientific, detailed, accurate',
+    'history': 'historical, authentic, period-appropriate',
+    'lifestyle': 'lifestyle, relatable, aspirational'
+  };
+
+  const style = styleModifiers[theme] || styleModifiers.educational;
+  const genreStyle = genreModifiers[genre] || '';
+
+  return `Create a ${style} ${genreStyle} image that represents: ${section}`;
+}
+
+// Helper function to create FFmpeg filter for montage
+function createMontageFilter(imagePaths, durations, transitionStyle, dimensions) {
+  const filters = [];
+  const inputs = imagePaths.length;
+  
+  // Scale all images to target dimensions
+  for (let i = 0; i < inputs; i++) {
+    filters.push(`[${i}:v]scale=${dimensions.width}:${dimensions.height}[v${i}]`);
+  }
+
+  // Add transitions based on style
+  const transitionFilters = {
+    'fade': (i) => `[v${i}][v${i+1}]xfade=transition=fade:duration=1:offset=${durations[i]}[v${i+1}out]`,
+    'slide': (i) => `[v${i}][v${i+1}]xfade=transition=slideleft:duration=1:offset=${durations[i]}[v${i+1}out]`,
+    'dynamic': (i) => `[v${i}][v${i+1}]xfade=transition=wiperight:duration=1:offset=${durations[i]}[v${i+1}out]`
+  };
+
+  const transition = transitionFilters[transitionStyle] || transitionFilters.fade;
+
+  // Apply transitions
+  for (let i = 0; i < inputs - 1; i++) {
+    filters.push(transition(i));
+  }
+
+  // Add audio
+  filters.push(`[${inputs}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[aout]`);
+
+  return filters.join(';');
+}
+
+// Helper function to calculate section durations
+function calculateSectionDurations(sections, totalDuration) {
+  const durations = [];
+  let currentTime = 0;
+
+  for (let i = 0; i < sections.length; i++) {
+    const sectionDuration = estimateSentenceDuration(sections[i]);
+    durations.push(currentTime);
+    currentTime += sectionDuration;
+  }
+
+  return durations;
 }
 
 // Function to create captions video

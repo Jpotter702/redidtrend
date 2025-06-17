@@ -5,8 +5,8 @@ yarn.lock
 pnpm-lock.yaml
 
 # Environment variables and secrets
-.env
-.env.*
+#.env
+#.env.*
 *.pem
 .aws/
 .config/

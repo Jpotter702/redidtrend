@@ -1,0 +1,49 @@
+{
+  "LaunchTemplateData": {
+    "ImageId": "ami-0c7217cdde317cfec",  // Ubuntu 22.04 LTS in us-east-1
+    "InstanceType": "t3.large",
+    "KeyName": "video-service-key",
+    "SecurityGroupIds": ["sg-video-service"],
+    "IamInstanceProfile": {
+      "Name": "VideoServiceRole"
+    },
+    "BlockDeviceMappings": [
+      {
+        "DeviceName": "/dev/sda1",
+        "Ebs": {
+          "VolumeSize": 30,
+          "VolumeType": "gp3",
+          "DeleteOnTermination": true
+        }
+      },
+      {
+        "DeviceName": "/dev/sdf",
+        "Ebs": {
+          "VolumeSize": 100,
+          "VolumeType": "gp3",
+          "DeleteOnTermination": true
+        }
+      }
+    ],
+    "UserData": "IyEvYmluL2Jhc2gKc3VkbyBhcHQtZ2V0IHVwZGF0ZQpzdWRvIGFwdC1nZXQgaW5zdGFsbCAteSBnaXQKZ2l0IGNsb25lIGh0dHBz://github.com/yourusername/redidtrendL2dpdC5naXRodWIuY29tL3lvdXJ1c2VybmFtZS9yZWRpZHRyZW5kLmdpdCAvb3B0L3ZpZGVvLXNlcnZpY2UvYXBwCmNkIC9vcHQvdmlkZW8tc2VydmljZS9hcHAKY2hvd24gLVIgdWJ1bnR1OnVidW50dSAvb3B0L3ZpZGVvLXNlcnZpY2UKY2QgL29wdC92aWRlby1zZXJ2aWNlL3NjcmlwdHMKY2htb2QgK3ggc2V0dXAuc2gKLi9zZXR1cC5zaA==",
+    "TagSpecifications": [
+      {
+        "ResourceType": "instance",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "video-service"
+          },
+          {
+            "Key": "Environment",
+            "Value": "production"
+          },
+          {
+            "Key": "Service",
+            "Value": "video-generation"
+          }
+        ]
+      }
+    ]
+  }
+} 
